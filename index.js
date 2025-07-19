@@ -6,7 +6,6 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { protect, checkRole } = require('./authMiddleware');
 
-// ---【変更点】環境変数からFirebaseの認証情報を読み込む ---
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -17,7 +16,14 @@ const db = admin.firestore();
 const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
-app.use(cors());
+
+// ---【変更点】CORSの設定を具体的に記述 ---
+const corsOptions = {
+  origin: 'http://localhost:3000', // ローカルのReactアプリのURLを許可
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 // --- 認証が不要なAPI ---
