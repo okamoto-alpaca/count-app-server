@@ -17,7 +17,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
 
-// ---【変更点】CORSの設定に本番環境のURLを追加 ---
 const allowedOrigins = [
     'http://localhost:3000',
     'https://count-app-frontend-rg4ejm2ou-okamoto-alpacas-projects.vercel.app'
@@ -34,7 +33,6 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
-
 
 app.use(express.json());
 
@@ -92,17 +90,6 @@ app.post('/api/login', async (req, res) => {
 });
 
 // --- 認証が必要なAPI ---
-app.get(
-    '/api/admin-data',
-    protect,
-    checkRole(['master', 'super']),
-    (req, res) => {
-        res.status(200).json({
-            message: `ようこそ ${req.user.name} さん！これは管理者用のデータです。`
-        });
-    }
-);
-
 app.post(
     '/api/surveys',
     protect,
