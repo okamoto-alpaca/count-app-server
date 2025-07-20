@@ -17,12 +17,24 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
 
-// ---【変更点】CORSの設定を具体的に記述 ---
+// ---【変更点】CORSの設定に本番環境のURLを追加 ---
+const allowedOrigins = [
+    'http://localhost:3000',
+    'https://count-app-frontend-rg4ejm2ou-okamoto-alpacas-projects.vercel.app'
+];
+
 const corsOptions = {
-  origin: 'http://localhost:3000', // ローカルのReactアプリのURLを許可
+  origin: function (origin, callback) {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
+
 
 app.use(express.json());
 
