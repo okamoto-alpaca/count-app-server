@@ -17,16 +17,14 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
 
-// ---【変更点】許可リストにVercelの本番URLを追加 ---
+// ---【変更点】許可リストを本番URLに更新 ---
 const allowedOrigins = [
-    'http://localhost:3000', // ローカル開発環境
-    // ↓↓↓↓↓↓ ここのURLを、手順1で確認したあなたのVercelの本番URLに書き換えてください ↓↓↓↓↓↓
-    'count-app-frontend.vercel.app' 
+    'http://localhost:3000', // ローカル開発環境用
+    'https://count-app-frontend.vercel.app' // Vercelの本番環境用
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // originが存在しない場合や、許可リストに含まれている場合に許可
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
       callback(null, true);
     } else {
