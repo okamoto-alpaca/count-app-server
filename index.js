@@ -17,21 +17,17 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
 
-// ---【変更点】CORSの設定をより柔軟なものに変更 ---
+// ---【変更点】許可リストにVercelの本番URLを追加 ---
 const allowedOrigins = [
     'http://localhost:3000', // ローカル開発環境
-    // Vercelの本番ドメインも必要であればここに追加
+    // ↓↓↓↓↓↓ ここのURLを、手順1で確認したあなたのVercelの本番URLに書き換えてください ↓↓↓↓↓↓
+    'count-app-frontend.vercel.app' 
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // originが存在しない場合（サーバー内からのリクエストなど）も許可
-    if (!origin) return callback(null, true);
-
-    // Vercelのプレビュードメインに一致するかどうかをチェック
-    const isVercelPreview = /--okamoto-alpacas-projects\.vercel\.app$/.test(origin);
-
-    if (allowedOrigins.indexOf(origin) !== -1 || isVercelPreview) {
+    // originが存在しない場合や、許可リストに含まれている場合に許可
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
