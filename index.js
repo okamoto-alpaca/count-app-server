@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcrypt'); // ---【修正点】require('bcrypt') に修正
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { protect, checkRole } = require('./authMiddleware');
@@ -93,9 +93,8 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// --- 認証が必要なAPI ---
+// --- 認証が必要なAPIのルーティング ---
 app.use('/api/users', userRoutes(db));
-// ---【変更点】APIのパスを修正 ---
 app.use('/api/surveys', surveyRoutes(db));
 
 
@@ -334,6 +333,7 @@ app.get(
         }
     }
 );
+
 
 const PORT = 8080;
 app.listen(PORT, () => {

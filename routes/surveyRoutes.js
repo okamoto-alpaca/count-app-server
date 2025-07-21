@@ -107,8 +107,8 @@ const surveyRoutes = (db) => {
             }
         }
     );
-
-    // ---【追加】ここからSurvey InstancesのAPI ---
+    
+    // ---【変更点】Survey InstancesのAPIをこちらに統合 ---
     
     router.post(
         '/instances',
