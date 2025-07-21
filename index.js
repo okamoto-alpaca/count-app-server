@@ -373,17 +373,19 @@ app.post(
     }
 );
 
-// ---【新機能】進行中の調査を取得するAPI ---
 app.get(
     '/api/survey-instances/in-progress',
     protect,
     async (req, res) => {
         try {
             const instancesRef = db.collection('survey_instances');
+            // ---【変更点】日付の降順で並び替え、最初の1件のみ取得 ---
             const snapshot = await instancesRef
                 .where('companyCode', '==', req.user.companyCode)
                 .where('surveyorId', '==', req.user.id)
                 .where('status', '==', 'in-progress')
+                .orderBy('startedAt', 'desc') // 新しい順に並び替え
+                .limit(1) // 最初の1件のみ取得
                 .get();
             
             if (snapshot.empty) {
