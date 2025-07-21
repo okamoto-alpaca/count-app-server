@@ -292,7 +292,7 @@ app.put(
 );
 
 
-// Results
+// Results & Survey Instances
 app.post(
     '/api/results',
     protect,
@@ -302,26 +302,46 @@ app.post(
             if (!instanceId) {
                 return res.status(400).json({ message: '調査インスタンスIDが必要です。' });
             }
-            const newResult = {
-                ...resultData,
-                surveyedAt: new Date(),
-                surveyedBy: req.user.id,
-                companyCode: req.user.companyCode
-            };
+
             const instanceRef = db.collection('survey_instances').doc(instanceId);
-            await db.runTransaction(async (transaction) => {
-                const instanceDoc = await transaction.get(instanceRef);
-                if (!instanceDoc.exists) {
-                    throw new Error("調査インスタンスが見つかりません。");
-                }
-                transaction.update(instanceRef, { status: 'completed', counts: resultData.counts });
-                const resultRef = db.collection('results').doc();
-                transaction.set(resultRef, newResult);
+            
+            // ---【変更点】resultsコレクションへの保存をやめ、instanceに全情報を集約 ---
+            await instanceRef.update({
+                status: 'completed',
+                counts: resultData.counts,
+                totalCount: resultData.totalCount,
+                discoveryRate: resultData.discoveryRate,
+                rank: resultData.rank,
+                completedAt: new Date()
             });
-            res.status(201).json({ message: '調査結果を保存しました。' });
+            
+            res.status(200).json({ message: '調査結果を保存しました。' });
         } catch(error) {
             console.error('調査結果の保存エラー:', error);
             res.status(500).json({ message: '結果の保存中にエラーが発生しました。' });
+        }
+    }
+);
+
+// ---【新機能】調査を破棄するAPI ---
+app.post(
+    '/api/results/discard',
+    protect,
+    async (req, res) => {
+        try {
+            const { instanceId } = req.body;
+            if (!instanceId) {
+                return res.status(400).json({ message: '調査インスタンスIDが必要です。' });
+            }
+            const instanceRef = db.collection('survey_instances').doc(instanceId);
+            await instanceRef.update({
+                status: 'discarded', // 状態を'破棄済み'に
+                discardedAt: new Date()
+            });
+            res.status(200).json({ message: '調査を破棄しました。' });
+        } catch (error) {
+            console.error('調査の破棄エラー:', error);
+            res.status(500).json({ message: '調査の破棄中にエラーが発生しました。' });
         }
     }
 );
@@ -360,36 +380,6 @@ app.get(
     }
 );
 
-// ---【新機能】全調査結果を取得するAPI ---
-app.get(
-    '/api/results/all',
-    protect,
-    checkRole(['master', 'super']),
-    async (req, res) => {
-        try {
-            const resultsRef = db.collection('results');
-            const snapshot = await resultsRef.where('companyCode', '==', req.user.companyCode).orderBy('surveyedAt', 'desc').get();
-
-            if (snapshot.empty) {
-                return res.status(200).json([]);
-            }
-            const resultsList = snapshot.docs.map(doc => {
-                const data = doc.data();
-                return { 
-                    id: doc.id, 
-                    name: data.surveyName, // フロントエンドの表示用にnameキーを追加
-                    createdAt: data.surveyedAt.toDate().toISOString() // フロントエンドの表示用にcreatedAtキーを追加
-                };
-            });
-            res.status(200).json(resultsList);
-        } catch (error) {
-            console.error('全調査結果の取得エラー:', error);
-            res.status(500).json({ message: '全調査結果の取得中にエラーが発生しました。' });
-        }
-    }
-);
-
-// ---【新機能】調査結果を削除するAPI ---
 app.delete(
     '/api/results',
     protect,
@@ -401,15 +391,48 @@ app.delete(
                 return res.status(400).json({ message: '削除するアイテムのIDを指定してください。' });
             }
             const batch = db.batch();
-            const resultsRef = db.collection('results');
+            const instancesRef = db.collection('survey_instances');
             ids.forEach(id => {
-                batch.delete(resultsRef.doc(id));
+                batch.delete(instancesRef.doc(id));
             });
             await batch.commit();
             res.status(200).json({ message: '調査結果を削除しました。' });
         } catch (error) {
             console.error('調査結果の削除エラー:', error);
             res.status(500).json({ message: '調査結果の削除中にエラーが発生しました。' });
+        }
+    }
+);
+
+app.get(
+    '/api/results/all',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const instancesRef = db.collection('survey_instances');
+            // ---【変更点】'completed'ステータスのものだけ取得 ---
+            const snapshot = await instancesRef
+                .where('companyCode', '==', req.user.companyCode)
+                .where('status', '==', 'completed')
+                .orderBy('startedAt', 'desc')
+                .get();
+
+            if (snapshot.empty) {
+                return res.status(200).json([]);
+            }
+            const resultsList = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return { 
+                    id: doc.id, 
+                    name: data.name,
+                    createdAt: data.startedAt.toDate().toISOString()
+                };
+            });
+            res.status(200).json(resultsList);
+        } catch (error) {
+            console.error('全調査結果の取得エラー:', error);
+            res.status(500).json({ message: '全調査結果の取得中にエラーが発生しました。' });
         }
     }
 );
@@ -468,7 +491,6 @@ app.get(
         }
     }
 );
-
 
 const PORT = 8080;
 app.listen(PORT, () => {
