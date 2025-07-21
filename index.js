@@ -1,13 +1,13 @@
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
-const bcrypt = 'bcrypt';
+const bcrypt = require('bcrypt'); // ---【修正点】---
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { protect, checkRole } = require('./authMiddleware');
 
 const userRoutes = require('./routes/userRoutes');
-const surveyRoutes = require('./routes/surveyRoutes'); // ---【追加】---
+const surveyRoutes = require('./routes/surveyRoutes');
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
@@ -95,7 +95,7 @@ app.post('/api/login', async (req, res) => {
 
 // --- 認証が必要なAPI ---
 app.use('/api/users', userRoutes(db));
-app.use('/api/surveys', surveyRoutes(db)); // ---【変更点】---
+app.use('/api/surveys', surveyRoutes(db));
 
 // Presets
 app.post(
@@ -163,7 +163,7 @@ app.delete(
             res.status(200).json({ message: '削除が完了しました。' });
         } catch (error) {
             console.error('プリセットの削除エラー:', error);
-            res.status(500).json({ message: 'プリセットの削除中にエラーが発生しました。' });
+            res.status(500).json({ message: '削除中にエラーが発生しました。' });
         }
     }
 );
@@ -195,7 +195,7 @@ app.put(
 );
 
 
-// Results & Survey Instances (Survey InstancesはSurvey Routesに移動済み)
+// Results & Survey Instances
 app.post(
     '/api/results',
     protect,
