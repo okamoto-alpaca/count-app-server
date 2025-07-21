@@ -17,10 +17,9 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
 
-// ---【変更点】許可リストを本番URLに更新 ---
 const allowedOrigins = [
-    'http://localhost:3000', // ローカル開発環境用
-    'https://count-app-frontend.vercel.app' // Vercelの本番環境用
+    'http://localhost:3000',
+    'https://count-app-frontend.vercel.app'
 ];
 
 const corsOptions = {
@@ -217,6 +216,33 @@ app.get(
         }
     }
 );
+
+// ---【新機能】プリセットを保存するAPI ---
+app.post(
+    '/api/presets',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const { name, realWork, incidentalWork, wastefulWork } = req.body;
+            if (!name || !name.trim()) {
+                return res.status(400).json({ message: 'プリセット名を入力してください。' });
+            }
+            const newPreset = {
+                name, realWork, incidentalWork, wastefulWork,
+                createdAt: new Date(),
+                authorId: req.user.id,
+                companyCode: req.user.companyCode
+            };
+            const docRef = await db.collection('presets').add(newPreset);
+            res.status(201).json({ message: 'プリセットを登録しました。', id: docRef.id });
+        } catch (error) {
+            console.error('プリセットの登録エラー:', error);
+            res.status(500).json({ message: 'プリセットの登録中にエラーが発生しました。' });
+        }
+    }
+);
+
 
 const PORT = 8080;
 app.listen(PORT, () => {
