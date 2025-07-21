@@ -1,10 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const { getFirestore } = require('firebase-admin/firestore');
 const { protect, checkRole } = require('../authMiddleware');
 
 const router = express.Router();
 
-// ---【変更点】ルーターの定義を関数に変更し、dbを引数として受け取る ---
 const userRoutes = (db) => {
     // ユーザー一覧を取得 (GET /api/users)
     router.get(
@@ -13,8 +13,12 @@ const userRoutes = (db) => {
         checkRole(['master', 'super']),
         async (req, res) => {
             try {
-                const usersRef = db.collection('users');
-                const snapshot = await usersRef.where('companyCode', '==', req.user.companyCode).get();
+                let query = db.collection('users');
+                // ---【変更点】superユーザーは全ユーザー、masterは自社のユーザーのみ取得 ---
+                if (req.user.role !== 'super') {
+                    query = query.where('companyCode', '==', req.user.companyCode);
+                }
+                const snapshot = await query.get();
                 
                 const userList = snapshot.docs.map(doc => {
                     const { passwordHash, ...userData } = doc.data();
@@ -36,9 +40,20 @@ const userRoutes = (db) => {
         checkRole(['master', 'super']),
         async (req, res) => {
             try {
-                const { name, userId, password, role } = req.body;
+                const { name, userId, password, role, companyCode } = req.body;
+                
                 if (!name || !userId || !password || !role) {
-                    return res.status(400).json({ message: 'すべてのフィールドを入力してください。' });
+                    return res.status(400).json({ message: '必須フィールドが不足しています。' });
+                }
+
+                let finalCompanyCode;
+                if (req.user.role === 'super') {
+                    if (!companyCode) {
+                        return res.status(400).json({ message: 'superユーザーは企業コードを指定する必要があります。' });
+                    }
+                    finalCompanyCode = companyCode;
+                } else {
+                    finalCompanyCode = req.user.companyCode;
                 }
 
                 const salt = await bcrypt.genSalt(10);
@@ -49,7 +64,7 @@ const userRoutes = (db) => {
                     userId,
                     passwordHash,
                     role,
-                    companyCode: req.user.companyCode,
+                    companyCode: finalCompanyCode,
                     createdAt: new Date(),
                 };
 
@@ -71,9 +86,13 @@ const userRoutes = (db) => {
         async (req, res) => {
             try {
                 const { id } = req.params;
-                const { name, userId, password, role } = req.body;
+                const { name, userId, password, role, companyCode } = req.body;
 
                 const updateData = { name, userId, role };
+
+                if (req.user.role === 'super' && companyCode) {
+                    updateData.companyCode = companyCode;
+                }
 
                 if (password) {
                     const salt = await bcrypt.genSalt(10);
