@@ -6,7 +6,6 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { protect, checkRole } = require('./authMiddleware');
 
-// ---【追加】userRoutesをインポート ---
 const userRoutes = require('./routes/userRoutes');
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -15,7 +14,7 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-const db = admin.firestore();
+const db = admin.firestore(); // ---【変更点】dbの初期化をここで行う
 const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
@@ -95,8 +94,8 @@ app.post('/api/login', async (req, res) => {
 
 // --- 認証が必要なAPI ---
 
-// ---【変更点】userRoutesを '/api/users' というパスで登録 ---
-app.use('/api/users', userRoutes);
+// ---【変更点】初期化したdbを渡してルーターを呼び出す ---
+app.use('/api/users', userRoutes(db));
 
 
 // Surveys
@@ -491,7 +490,6 @@ app.get(
         }
     }
 );
-
 
 const PORT = 8080;
 app.listen(PORT, () => {
