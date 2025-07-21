@@ -6,6 +6,9 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { protect, checkRole } = require('./authMiddleware');
 
+// ---【追加】userRoutesをインポート ---
+const userRoutes = require('./routes/userRoutes');
+
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -91,6 +94,10 @@ app.post('/api/login', async (req, res) => {
 });
 
 // --- 認証が必要なAPI ---
+
+// ---【変更点】userRoutesを '/api/users' というパスで登録 ---
+app.use('/api/users', userRoutes);
+
 
 // Surveys
 app.post(
@@ -481,127 +488,6 @@ app.get(
         } catch (error) {
             console.error('進行中の調査の取得エラー:', error);
             res.status(500).json({ message: '進行中の調査の取得中にエラーが発生しました。' });
-        }
-    }
-);
-
-
-// ---【新機能】ユーザー管理API ---
-
-// ユーザー一覧を取得
-app.get(
-    '/api/users',
-    protect,
-    checkRole(['master', 'super']),
-    async (req, res) => {
-        try {
-            const usersRef = db.collection('users');
-            const snapshot = await usersRef.where('companyCode', '==', req.user.companyCode).get();
-            
-            const userList = snapshot.docs.map(doc => {
-                const { passwordHash, ...userData } = doc.data();
-                return { id: doc.id, ...userData };
-            });
-
-            res.status(200).json(userList);
-        } catch (error) {
-            console.error('ユーザー一覧の取得エラー:', error);
-            res.status(500).json({ message: 'ユーザー一覧の取得中にエラーが発生しました。' });
-        }
-    }
-);
-
-// 新規ユーザーを作成
-app.post(
-    '/api/users',
-    protect,
-    checkRole(['master', 'super']),
-    async (req, res) => {
-        try {
-            const { name, userId, password, role } = req.body;
-            if (!name || !userId || !password || !role) {
-                return res.status(400).json({ message: 'すべてのフィールドを入力してください。' });
-            }
-
-            const salt = await bcrypt.genSalt(10);
-            const passwordHash = await bcrypt.hash(password, salt);
-
-            const newUser = {
-                name,
-                userId,
-                passwordHash,
-                role,
-                companyCode: req.user.companyCode,
-                createdAt: new Date(),
-            };
-
-            const docRef = await db.collection('users').add(newUser);
-            res.status(201).json({ message: 'ユーザーを作成しました。', id: docRef.id });
-
-        } catch (error) {
-            console.error('ユーザー作成エラー:', error);
-            res.status(500).json({ message: 'ユーザー作成中にエラーが発生しました。' });
-        }
-    }
-);
-
-// ユーザー情報を更新
-app.put(
-    '/api/users/:id',
-    protect,
-    checkRole(['master', 'super']),
-    async (req, res) => {
-        try {
-            const { id } = req.params;
-            const { name, userId, password, role } = req.body;
-
-            const updateData = { name, userId, role };
-
-            if (password) {
-                const salt = await bcrypt.genSalt(10);
-                updateData.passwordHash = await bcrypt.hash(password, salt);
-            }
-
-            const userRef = db.collection('users').doc(id);
-            await userRef.update(updateData);
-
-            res.status(200).json({ message: 'ユーザー情報を更新しました。' });
-
-        } catch (error) {
-            console.error('ユーザー更新エラー:', error);
-            res.status(500).json({ message: 'ユーザー更新中にエラーが発生しました。' });
-        }
-    }
-);
-
-// ユーザーを削除
-app.delete(
-    '/api/users',
-    protect,
-    checkRole(['master', 'super']),
-    async (req, res) => {
-        try {
-            const { ids } = req.body;
-            if (!ids || !Array.isArray(ids) || ids.length === 0) {
-                return res.status(400).json({ message: '削除するユーザーIDを指定してください。' });
-            }
-
-            if (ids.includes(req.user.id)) {
-                return res.status(403).json({ message: '自分自身を削除することはできません。' });
-            }
-            
-            const batch = db.batch();
-            const usersRef = db.collection('users');
-            ids.forEach(id => {
-                batch.delete(usersRef.doc(id));
-            });
-            await batch.commit();
-
-            res.status(200).json({ message: 'ユーザーを削除しました。' });
-
-        } catch (error) {
-            console.error('ユーザー削除エラー:', error);
-            res.status(500).json({ message: 'ユーザー削除中にエラーが発生しました。' });
         }
     }
 );
