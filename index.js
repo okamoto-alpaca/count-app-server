@@ -217,7 +217,6 @@ app.get(
     }
 );
 
-// ---【新機能】プリセットを保存するAPI ---
 app.post(
     '/api/presets',
     protect,
@@ -243,6 +242,26 @@ app.post(
     }
 );
 
+// ---【新機能】プリセットの一覧を取得するAPI ---
+app.get(
+    '/api/presets',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const presetsRef = db.collection('presets');
+            const snapshot = await presetsRef.where('companyCode', '==', req.user.companyCode).get();
+            if (snapshot.empty) {
+                return res.status(200).json([]);
+            }
+            const presetList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            res.status(200).json(presetList);
+        } catch (error) {
+            console.error('プリセットの取得エラー:', error);
+            res.status(500).json({ message: 'プリセットの取得中にエラーが発生しました。' });
+        }
+    }
+);
 
 const PORT = 8080;
 app.listen(PORT, () => {
