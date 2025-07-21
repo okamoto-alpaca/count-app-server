@@ -344,7 +344,7 @@ app.get(
     }
 );
 
-// ---【新機能】調査インスタンス（進行中の調査）を作成するAPI ---
+// Survey Instances
 app.post(
     '/api/survey-instances',
     protect,
@@ -359,8 +359,8 @@ app.post(
                 surveyTemplateId,
                 surveyorId: req.user.id,
                 companyCode: req.user.companyCode,
-                status: 'in-progress', // 状態を「進行中」に設定
-                counts: {}, // カウントの初期値は空
+                status: 'in-progress',
+                counts: {},
                 startedAt: new Date(),
             };
 
@@ -369,6 +369,33 @@ app.post(
         } catch (error) {
             console.error('調査インスタンスの作成エラー:', error);
             res.status(500).json({ message: '調査の開始中にエラーが発生しました。' });
+        }
+    }
+);
+
+// ---【新機能】進行中の調査を取得するAPI ---
+app.get(
+    '/api/survey-instances/in-progress',
+    protect,
+    async (req, res) => {
+        try {
+            const instancesRef = db.collection('survey_instances');
+            const snapshot = await instancesRef
+                .where('companyCode', '==', req.user.companyCode)
+                .where('surveyorId', '==', req.user.id)
+                .where('status', '==', 'in-progress')
+                .get();
+            
+            if (snapshot.empty) {
+                return res.status(200).json([]);
+            }
+
+            const instances = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            res.status(200).json(instances);
+
+        } catch (error) {
+            console.error('進行中の調査の取得エラー:', error);
+            res.status(500).json({ message: '進行中の調査の取得中にエラーが発生しました。' });
         }
     }
 );
