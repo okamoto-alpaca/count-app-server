@@ -242,7 +242,6 @@ app.post(
     }
 );
 
-// ---【新機能】プリセットの一覧を取得するAPI ---
 app.get(
     '/api/presets',
     protect,
@@ -262,6 +261,33 @@ app.get(
         }
     }
 );
+
+// ---【新機能】プリセットを削除するAPI ---
+app.delete(
+    '/api/presets',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const { ids } = req.body;
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ message: '削除するアイテムのIDを指定してください。' });
+            }
+            const batch = db.batch();
+            const presetsRef = db.collection('presets');
+            ids.forEach(id => {
+                const docRef = presetsRef.doc(id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+            res.status(200).json({ message: '削除が完了しました。' });
+        } catch (error) {
+            console.error('プリセットの削除エラー:', error);
+            res.status(500).json({ message: 'プリセットの削除中にエラーが発生しました。' });
+        }
+    }
+);
+
 
 const PORT = 8080;
 app.listen(PORT, () => {
