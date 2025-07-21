@@ -302,10 +302,7 @@ app.post(
             if (!instanceId) {
                 return res.status(400).json({ message: '調査インスタンスIDが必要です。' });
             }
-
             const instanceRef = db.collection('survey_instances').doc(instanceId);
-            
-            // ---【変更点】resultsコレクションへの保存をやめ、instanceに全情報を集約 ---
             await instanceRef.update({
                 status: 'completed',
                 counts: resultData.counts,
@@ -314,7 +311,6 @@ app.post(
                 rank: resultData.rank,
                 completedAt: new Date()
             });
-            
             res.status(200).json({ message: '調査結果を保存しました。' });
         } catch(error) {
             console.error('調査結果の保存エラー:', error);
@@ -323,7 +319,6 @@ app.post(
     }
 );
 
-// ---【新機能】調査を破棄するAPI ---
 app.post(
     '/api/results/discard',
     protect,
@@ -335,7 +330,7 @@ app.post(
             }
             const instanceRef = db.collection('survey_instances').doc(instanceId);
             await instanceRef.update({
-                status: 'discarded', // 状態を'破棄済み'に
+                status: 'discarded',
                 discardedAt: new Date()
             });
             res.status(200).json({ message: '調査を破棄しました。' });
@@ -411,13 +406,11 @@ app.get(
     async (req, res) => {
         try {
             const instancesRef = db.collection('survey_instances');
-            // ---【変更点】'completed'ステータスのものだけ取得 ---
             const snapshot = await instancesRef
                 .where('companyCode', '==', req.user.companyCode)
                 .where('status', '==', 'completed')
                 .orderBy('startedAt', 'desc')
                 .get();
-
             if (snapshot.empty) {
                 return res.status(200).json([]);
             }
@@ -491,6 +484,128 @@ app.get(
         }
     }
 );
+
+
+// ---【新機能】ユーザー管理API ---
+
+// ユーザー一覧を取得
+app.get(
+    '/api/users',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const usersRef = db.collection('users');
+            const snapshot = await usersRef.where('companyCode', '==', req.user.companyCode).get();
+            
+            const userList = snapshot.docs.map(doc => {
+                const { passwordHash, ...userData } = doc.data();
+                return { id: doc.id, ...userData };
+            });
+
+            res.status(200).json(userList);
+        } catch (error) {
+            console.error('ユーザー一覧の取得エラー:', error);
+            res.status(500).json({ message: 'ユーザー一覧の取得中にエラーが発生しました。' });
+        }
+    }
+);
+
+// 新規ユーザーを作成
+app.post(
+    '/api/users',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const { name, userId, password, role } = req.body;
+            if (!name || !userId || !password || !role) {
+                return res.status(400).json({ message: 'すべてのフィールドを入力してください。' });
+            }
+
+            const salt = await bcrypt.genSalt(10);
+            const passwordHash = await bcrypt.hash(password, salt);
+
+            const newUser = {
+                name,
+                userId,
+                passwordHash,
+                role,
+                companyCode: req.user.companyCode,
+                createdAt: new Date(),
+            };
+
+            const docRef = await db.collection('users').add(newUser);
+            res.status(201).json({ message: 'ユーザーを作成しました。', id: docRef.id });
+
+        } catch (error) {
+            console.error('ユーザー作成エラー:', error);
+            res.status(500).json({ message: 'ユーザー作成中にエラーが発生しました。' });
+        }
+    }
+);
+
+// ユーザー情報を更新
+app.put(
+    '/api/users/:id',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { name, userId, password, role } = req.body;
+
+            const updateData = { name, userId, role };
+
+            if (password) {
+                const salt = await bcrypt.genSalt(10);
+                updateData.passwordHash = await bcrypt.hash(password, salt);
+            }
+
+            const userRef = db.collection('users').doc(id);
+            await userRef.update(updateData);
+
+            res.status(200).json({ message: 'ユーザー情報を更新しました。' });
+
+        } catch (error) {
+            console.error('ユーザー更新エラー:', error);
+            res.status(500).json({ message: 'ユーザー更新中にエラーが発生しました。' });
+        }
+    }
+);
+
+// ユーザーを削除
+app.delete(
+    '/api/users',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const { ids } = req.body;
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ message: '削除するユーザーIDを指定してください。' });
+            }
+
+            if (ids.includes(req.user.id)) {
+                return res.status(403).json({ message: '自分自身を削除することはできません。' });
+            }
+            
+            const batch = db.batch();
+            const usersRef = db.collection('users');
+            ids.forEach(id => {
+                batch.delete(usersRef.doc(id));
+            });
+            await batch.commit();
+
+            res.status(200).json({ message: 'ユーザーを削除しました。' });
+
+        } catch (error) {
+            console.error('ユーザー削除エラー:', error);
+            res.status(500).json({ message: 'ユーザー削除中にエラーが発生しました。' });
+        }
+    }
+);
+
 
 const PORT = 8080;
 app.listen(PORT, () => {
