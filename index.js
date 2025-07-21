@@ -169,7 +169,7 @@ app.delete(
 );
 
 app.put(
-    '/api/surveys/:id', // ---【追加】特定のIDを持つsurveyを更新
+    '/api/surveys/:id',
     protect,
     checkRole(['master', 'super']),
     async (req, res) => {
@@ -266,7 +266,7 @@ app.delete(
 );
 
 app.put(
-    '/api/presets/:id', // ---【追加】特定のIDを持つpresetを更新
+    '/api/presets/:id',
     protect,
     checkRole(['master', 'super']),
     async (req, res) => {
@@ -340,6 +340,35 @@ app.get(
         } catch (error) {
             console.error('調査結果の検索エラー:', error);
             res.status(500).json({ message: '結果の検索中にエラーが発生しました。' });
+        }
+    }
+);
+
+// ---【新機能】調査インスタンス（進行中の調査）を作成するAPI ---
+app.post(
+    '/api/survey-instances',
+    protect,
+    async (req, res) => {
+        try {
+            const { surveyTemplateId } = req.body;
+            if (!surveyTemplateId) {
+                return res.status(400).json({ message: '調査テンプレートIDが必要です。' });
+            }
+            
+            const newInstance = {
+                surveyTemplateId,
+                surveyorId: req.user.id,
+                companyCode: req.user.companyCode,
+                status: 'in-progress', // 状態を「進行中」に設定
+                counts: {}, // カウントの初期値は空
+                startedAt: new Date(),
+            };
+
+            const docRef = await db.collection('survey_instances').add(newInstance);
+            res.status(201).json({ message: '調査を開始しました。', instanceId: docRef.id });
+        } catch (error) {
+            console.error('調査インスタンスの作成エラー:', error);
+            res.status(500).json({ message: '調査の開始中にエラーが発生しました。' });
         }
     }
 );
