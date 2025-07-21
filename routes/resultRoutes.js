@@ -1,96 +1,117 @@
 const express = require('express');
+const bcrypt = require('bcrypt');
 const { getFirestore } = require('firebase-admin/firestore');
 const { protect, checkRole } = require('../authMiddleware');
 
 const router = express.Router();
 
-const resultRoutes = (db) => {
-    // Save Survey Result (POST /api/results)
-    router.post(
-        '/',
-        protect,
-        async (req, res) => {
-            try {
-                const { instanceId, ...resultData } = req.body;
-                if (!instanceId) {
-                    return res.status(400).json({ message: '調査インスタンスIDが必要です。' });
-                }
-                const instanceRef = db.collection('survey_instances').doc(instanceId);
-                await instanceRef.update({
-                    status: 'completed',
-                    counts: resultData.counts,
-                    totalCount: resultData.totalCount,
-                    discoveryRate: resultData.discoveryRate,
-                    rank: resultData.rank,
-                    completedAt: new Date()
-                });
-                res.status(200).json({ message: '調査結果を保存しました。' });
-            } catch(error) {
-                console.error('調査結果の保存エラー:', error);
-                res.status(500).json({ message: '結果の保存中にエラーが発生しました。' });
-            }
-        }
-    );
-
-    // Discard Survey Result (POST /api/results/discard)
-    router.post(
-        '/discard',
-        protect,
-        async (req, res) => {
-            try {
-                const { instanceId } = req.body;
-                if (!instanceId) {
-                    return res.status(400).json({ message: '調査インスタンスIDが必要です。' });
-                }
-                const instanceRef = db.collection('survey_instances').doc(instanceId);
-                await instanceRef.update({
-                    status: 'discarded',
-                    discardedAt: new Date()
-                });
-                res.status(200).json({ message: '調査を破棄しました。' });
-            } catch (error) {
-                console.error('調査の破棄エラー:', error);
-                res.status(500).json({ message: '調査の破棄中にエラーが発生しました。' });
-            }
-        }
-    );
-
-    // Get Survey Results by Date Range (GET /api/results)
+const userRoutes = (db) => {
+    // ユーザー一覧を取得 (GET /api/users)
     router.get(
         '/',
         protect,
         checkRole(['master', 'super']),
         async (req, res) => {
             try {
-                const { startDate, endDate } = req.query;
-                if (!startDate || !endDate) {
-                    return res.status(400).json({ message: '開始日と終了日を指定してください。' });
+                let query = db.collection('users');
+                // superユーザーは全ユーザー、masterは自社のユーザーのみ取得
+                if (req.user.role !== 'super') {
+                    query = query.where('companyCode', '==', req.user.companyCode);
                 }
-                let query = db.collection('survey_instances')
-                    .where('companyCode', '==', req.user.companyCode)
-                    .where('status', '==', 'completed')
-                    .where('startedAt', '>=', new Date(startDate))
-                    .where('startedAt', '<=', new Date(endDate));
                 const snapshot = await query.get();
-                const resultsList = snapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return {
-                        id: doc.id, 
-                        surveyId: data.surveyTemplateId,
-                        surveyName: data.name,
-                        counts: data.counts,
-                        surveyedAt: data.startedAt.toDate().toISOString(),
-                    };
+                
+                const userList = snapshot.docs.map(doc => {
+                    const { passwordHash, ...userData } = doc.data();
+                    return { id: doc.id, ...userData };
                 });
-                res.status(200).json(resultsList);
+
+                res.status(200).json(userList);
             } catch (error) {
-                console.error('調査結果の検索エラー:', error);
-                res.status(500).json({ message: '結果の検索中にエラーが発生しました。' });
+                console.error('ユーザー一覧の取得エラー:', error);
+                res.status(500).json({ message: 'ユーザー一覧の取得中にエラーが発生しました。' });
             }
         }
     );
 
-    // Delete Survey Results (DELETE /api/results)
+    // 新規ユーザーを作成 (POST /api/users)
+    router.post(
+        '/',
+        protect,
+        checkRole(['master', 'super']),
+        async (req, res) => {
+            try {
+                const { name, userId, password, role, companyCode } = req.body; // ---【変更点】companyCodeを受け取る
+                
+                if (!name || !userId || !password || !role) {
+                    return res.status(400).json({ message: '必須フィールドが不足しています。' });
+                }
+
+                // ---【変更点】superユーザーのみcompanyCodeを指定可能 ---
+                let finalCompanyCode = req.user.companyCode;
+                if (req.user.role === 'super') {
+                    if (!companyCode) {
+                        return res.status(400).json({ message: 'superユーザーは企業コードを指定する必要があります。' });
+                    }
+                    finalCompanyCode = companyCode;
+                }
+
+                const salt = await bcrypt.genSalt(10);
+                const passwordHash = await bcrypt.hash(password, salt);
+
+                const newUser = {
+                    name,
+                    userId,
+                    passwordHash,
+                    role,
+                    companyCode: finalCompanyCode,
+                    createdAt: new Date(),
+                };
+
+                const docRef = await db.collection('users').add(newUser);
+                res.status(201).json({ message: 'ユーザーを作成しました。', id: docRef.id });
+
+            } catch (error) {
+                console.error('ユーザー作成エラー:', error);
+                res.status(500).json({ message: 'ユーザー作成中にエラーが発生しました。' });
+            }
+        }
+    );
+
+    // ユーザー情報を更新 (PUT /api/users/:id)
+    router.put(
+        '/:id',
+        protect,
+        checkRole(['master', 'super']),
+        async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { name, userId, password, role, companyCode } = req.body; // ---【変更点】companyCodeを受け取る
+
+                const updateData = { name, userId, role };
+
+                // ---【変更点】superユーザーはcompanyCodeも更新可能 ---
+                if (req.user.role === 'super' && companyCode) {
+                    updateData.companyCode = companyCode;
+                }
+
+                if (password) {
+                    const salt = await bcrypt.genSalt(10);
+                    updateData.passwordHash = await bcrypt.hash(password, salt);
+                }
+
+                const userRef = db.collection('users').doc(id);
+                await userRef.update(updateData);
+
+                res.status(200).json({ message: 'ユーザー情報を更新しました。' });
+
+            } catch (error) {
+                console.error('ユーザー更新エラー:', error);
+                res.status(500).json({ message: 'ユーザー更新中にエラーが発生しました。' });
+            }
+        }
+    );
+
+    // ユーザーを削除 (DELETE /api/users)
     router.delete(
         '/',
         protect,
@@ -99,55 +120,31 @@ const resultRoutes = (db) => {
             try {
                 const { ids } = req.body;
                 if (!ids || !Array.isArray(ids) || ids.length === 0) {
-                    return res.status(400).json({ message: '削除するアイテムのIDを指定してください。' });
+                    return res.status(400).json({ message: '削除するユーザーIDを指定してください。' });
                 }
+
+                if (ids.includes(req.user.id)) {
+                    return res.status(403).json({ message: '自分自身を削除することはできません。' });
+                }
+                
                 const batch = db.batch();
-                const instancesRef = db.collection('survey_instances');
+                const usersRef = db.collection('users');
                 ids.forEach(id => {
-                    batch.delete(instancesRef.doc(id));
+                    batch.delete(usersRef.doc(id));
                 });
                 await batch.commit();
-                res.status(200).json({ message: '調査結果を削除しました。' });
-            } catch (error) {
-                console.error('調査結果の削除エラー:', error);
-                res.status(500).json({ message: '調査結果の削除中にエラーが発生しました。' });
+
+                res.status(200).json({ message: 'ユーザーを削除しました。' });
+
+            } catch (error)
+            {
+                console.error('ユーザー削除エラー:', error);
+                res.status(500).json({ message: 'ユーザー削除中にエラーが発生しました。' });
             }
         }
     );
 
-    // Get All Survey Results (GET /api/results/all)
-    router.get(
-        '/all',
-        protect,
-        checkRole(['master', 'super']),
-        async (req, res) => {
-            try {
-                const instancesRef = db.collection('survey_instances');
-                const snapshot = await instancesRef
-                    .where('companyCode', '==', req.user.companyCode)
-                    .where('status', '==', 'completed')
-                    .orderBy('startedAt', 'desc')
-                    .get();
-                if (snapshot.empty) {
-                    return res.status(200).json([]);
-                }
-                const resultsList = snapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return { 
-                        id: doc.id, 
-                        name: data.name,
-                        createdAt: data.startedAt.toDate().toISOString()
-                    };
-                });
-                res.status(200).json(resultsList);
-            } catch (error) {
-                console.error('全調査結果の取得エラー:', error);
-                res.status(500).json({ message: '全調査結果の取得中にエラーが発生しました。' });
-            }
-        }
-    );
-    
     return router;
 };
 
-module.exports = resultRoutes;
+module.exports = userRoutes;
