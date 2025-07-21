@@ -298,37 +298,27 @@ app.post(
     protect,
     async (req, res) => {
         try {
-            // ---【変更点】リクエストからinstanceIdを受け取る ---
             const { instanceId, ...resultData } = req.body;
-
             if (!instanceId) {
                 return res.status(400).json({ message: '調査インスタンスIDが必要です。' });
             }
-
             const newResult = {
                 ...resultData,
                 surveyedAt: new Date(),
                 surveyedBy: req.user.id,
                 companyCode: req.user.companyCode
             };
-
             const instanceRef = db.collection('survey_instances').doc(instanceId);
-
-            // トランザクションで、結果の保存とインスタンスの更新を同時に行う
             await db.runTransaction(async (transaction) => {
                 const instanceDoc = await transaction.get(instanceRef);
                 if (!instanceDoc.exists) {
                     throw new Error("調査インスタンスが見つかりません。");
                 }
-                // インスタンスの状態を'completed'に更新
                 transaction.update(instanceRef, { status: 'completed', counts: resultData.counts });
-                // 結果を新しいドキュメントとして保存
                 const resultRef = db.collection('results').doc();
                 transaction.set(resultRef, newResult);
             });
-            
             res.status(201).json({ message: '調査結果を保存しました。' });
-
         } catch(error) {
             console.error('調査結果の保存エラー:', error);
             res.status(500).json({ message: '結果の保存中にエラーが発生しました。' });
@@ -346,25 +336,20 @@ app.get(
             if (!startDate || !endDate) {
                 return res.status(400).json({ message: '開始日と終了日を指定してください。' });
             }
-            
-            // ---【変更点】集計対象を完了済みの調査インスタンスにする ---
             let query = db.collection('survey_instances')
                 .where('companyCode', '==', req.user.companyCode)
-                .where('status', '==', 'completed') // 完了したものだけ
+                .where('status', '==', 'completed')
                 .where('startedAt', '>=', new Date(startDate))
                 .where('startedAt', '<=', new Date(endDate));
-
             const snapshot = await query.get();
             const resultsList = snapshot.docs.map(doc => {
                 const data = doc.data();
-                // フロントエンドが必要とする形式にデータを整形
                 return {
                     id: doc.id, 
                     surveyId: data.surveyTemplateId,
-                    surveyName: data.name, // このフィールドを追加するために、インスタンス作成時にnameも保存する必要がある
+                    surveyName: data.name,
                     counts: data.counts,
-                    surveyedAt: data.startedAt.toDate().toISOString(), // startedAtをsurveyedAtとして扱う
-                    // rankとdiscoveryRateを再計算するか、保存時にインスタンスに含める
+                    surveyedAt: data.startedAt.toDate().toISOString(),
                 };
             });
             res.status(200).json(resultsList);
@@ -375,27 +360,79 @@ app.get(
     }
 );
 
+// ---【新機能】全調査結果を取得するAPI ---
+app.get(
+    '/api/results/all',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const resultsRef = db.collection('results');
+            const snapshot = await resultsRef.where('companyCode', '==', req.user.companyCode).orderBy('surveyedAt', 'desc').get();
+
+            if (snapshot.empty) {
+                return res.status(200).json([]);
+            }
+            const resultsList = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return { 
+                    id: doc.id, 
+                    name: data.surveyName, // フロントエンドの表示用にnameキーを追加
+                    createdAt: data.surveyedAt.toDate().toISOString() // フロントエンドの表示用にcreatedAtキーを追加
+                };
+            });
+            res.status(200).json(resultsList);
+        } catch (error) {
+            console.error('全調査結果の取得エラー:', error);
+            res.status(500).json({ message: '全調査結果の取得中にエラーが発生しました。' });
+        }
+    }
+);
+
+// ---【新機能】調査結果を削除するAPI ---
+app.delete(
+    '/api/results',
+    protect,
+    checkRole(['master', 'super']),
+    async (req, res) => {
+        try {
+            const { ids } = req.body;
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ message: '削除するアイテムのIDを指定してください。' });
+            }
+            const batch = db.batch();
+            const resultsRef = db.collection('results');
+            ids.forEach(id => {
+                batch.delete(resultsRef.doc(id));
+            });
+            await batch.commit();
+            res.status(200).json({ message: '調査結果を削除しました。' });
+        } catch (error) {
+            console.error('調査結果の削除エラー:', error);
+            res.status(500).json({ message: '調査結果の削除中にエラーが発生しました。' });
+        }
+    }
+);
+
 // Survey Instances
 app.post(
     '/api/survey-instances',
     protect,
     async (req, res) => {
         try {
-            const { surveyTemplateId, surveyTemplateName } = req.body; // ---【変更点】テンプレート名も受け取る
+            const { surveyTemplateId, surveyTemplateName } = req.body;
             if (!surveyTemplateId || !surveyTemplateName) {
                 return res.status(400).json({ message: '調査テンプレートの情報が不足しています。' });
             }
-            
             const newInstance = {
                 surveyTemplateId,
-                name: surveyTemplateName, // ---【追加】
+                name: surveyTemplateName,
                 surveyorId: req.user.id,
                 companyCode: req.user.companyCode,
                 status: 'in-progress',
                 counts: {},
                 startedAt: new Date(),
             };
-
             const docRef = await db.collection('survey_instances').add(newInstance);
             res.status(201).json({ message: '調査を開始しました。', instanceId: docRef.id });
         } catch (error) {
@@ -425,7 +462,6 @@ app.get(
 
             const instances = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             res.status(200).json(instances);
-
         } catch (error) {
             console.error('進行中の調査の取得エラー:', error);
             res.status(500).json({ message: '進行中の調査の取得中にエラーが発生しました。' });
