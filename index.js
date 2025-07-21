@@ -298,15 +298,37 @@ app.post(
     protect,
     async (req, res) => {
         try {
-            const resultData = req.body;
+            // ---【変更点】リクエストからinstanceIdを受け取る ---
+            const { instanceId, ...resultData } = req.body;
+
+            if (!instanceId) {
+                return res.status(400).json({ message: '調査インスタンスIDが必要です。' });
+            }
+
             const newResult = {
                 ...resultData,
                 surveyedAt: new Date(),
                 surveyedBy: req.user.id,
                 companyCode: req.user.companyCode
             };
-            const docRef = await db.collection('results').add(newResult);
-            res.status(201).json({ message: '調査結果を保存しました。', id: docRef.id });
+
+            const instanceRef = db.collection('survey_instances').doc(instanceId);
+
+            // トランザクションで、結果の保存とインスタンスの更新を同時に行う
+            await db.runTransaction(async (transaction) => {
+                const instanceDoc = await transaction.get(instanceRef);
+                if (!instanceDoc.exists) {
+                    throw new Error("調査インスタンスが見つかりません。");
+                }
+                // インスタンスの状態を'completed'に更新
+                transaction.update(instanceRef, { status: 'completed', counts: resultData.counts });
+                // 結果を新しいドキュメントとして保存
+                const resultRef = db.collection('results').doc();
+                transaction.set(resultRef, newResult);
+            });
+            
+            res.status(201).json({ message: '調査結果を保存しました。' });
+
         } catch(error) {
             console.error('調査結果の保存エラー:', error);
             res.status(500).json({ message: '結果の保存中にエラーが発生しました。' });
@@ -324,16 +346,25 @@ app.get(
             if (!startDate || !endDate) {
                 return res.status(400).json({ message: '開始日と終了日を指定してください。' });
             }
-            let query = db.collection('results')
+            
+            // ---【変更点】集計対象を完了済みの調査インスタンスにする ---
+            let query = db.collection('survey_instances')
                 .where('companyCode', '==', req.user.companyCode)
-                .where('surveyedAt', '>=', new Date(startDate))
-                .where('surveyedAt', '<=', new Date(endDate));
+                .where('status', '==', 'completed') // 完了したものだけ
+                .where('startedAt', '>=', new Date(startDate))
+                .where('startedAt', '<=', new Date(endDate));
+
             const snapshot = await query.get();
             const resultsList = snapshot.docs.map(doc => {
                 const data = doc.data();
+                // フロントエンドが必要とする形式にデータを整形
                 return {
-                    id: doc.id, ...data,
-                    surveyedAt: data.surveyedAt.toDate().toISOString()
+                    id: doc.id, 
+                    surveyId: data.surveyTemplateId,
+                    surveyName: data.name, // このフィールドを追加するために、インスタンス作成時にnameも保存する必要がある
+                    counts: data.counts,
+                    surveyedAt: data.startedAt.toDate().toISOString(), // startedAtをsurveyedAtとして扱う
+                    // rankとdiscoveryRateを再計算するか、保存時にインスタンスに含める
                 };
             });
             res.status(200).json(resultsList);
@@ -350,13 +381,14 @@ app.post(
     protect,
     async (req, res) => {
         try {
-            const { surveyTemplateId } = req.body;
-            if (!surveyTemplateId) {
-                return res.status(400).json({ message: '調査テンプレートIDが必要です。' });
+            const { surveyTemplateId, surveyTemplateName } = req.body; // ---【変更点】テンプレート名も受け取る
+            if (!surveyTemplateId || !surveyTemplateName) {
+                return res.status(400).json({ message: '調査テンプレートの情報が不足しています。' });
             }
             
             const newInstance = {
                 surveyTemplateId,
+                name: surveyTemplateName, // ---【追加】
                 surveyorId: req.user.id,
                 companyCode: req.user.companyCode,
                 status: 'in-progress',
@@ -379,13 +411,12 @@ app.get(
     async (req, res) => {
         try {
             const instancesRef = db.collection('survey_instances');
-            // ---【変更点】日付の降順で並び替え、最初の1件のみ取得 ---
             const snapshot = await instancesRef
                 .where('companyCode', '==', req.user.companyCode)
                 .where('surveyorId', '==', req.user.id)
                 .where('status', '==', 'in-progress')
-                .orderBy('startedAt', 'desc') // 新しい順に並び替え
-                .limit(1) // 最初の1件のみ取得
+                .orderBy('startedAt', 'desc')
+                .limit(1)
                 .get();
             
             if (snapshot.empty) {
