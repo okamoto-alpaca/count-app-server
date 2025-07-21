@@ -7,7 +7,6 @@ const router = express.Router();
 const surveyRoutes = (db) => {
     // --- Survey Templates ---
 
-    // Create Survey Template (POST /api/surveys)
     router.post(
         '/',
         protect,
@@ -33,7 +32,6 @@ const surveyRoutes = (db) => {
         }
     );
 
-    // Get All Survey Templates (GET /api/surveys)
     router.get(
         '/',
         protect,
@@ -59,7 +57,6 @@ const surveyRoutes = (db) => {
         }
     );
 
-    // Delete Survey Templates (DELETE /api/surveys)
     router.delete(
         '/',
         protect,
@@ -85,7 +82,6 @@ const surveyRoutes = (db) => {
         }
     );
 
-    // Update Survey Template (PUT /api/surveys/:id)
     router.put(
         '/:id',
         protect,
@@ -112,9 +108,8 @@ const surveyRoutes = (db) => {
         }
     );
 
-    // --- Survey Instances ---
-
-    // Create Survey Instance (POST /api/survey-instances)
+    // ---【追加】ここからSurvey InstancesのAPI ---
+    
     router.post(
         '/instances',
         protect,
@@ -142,7 +137,6 @@ const surveyRoutes = (db) => {
         }
     );
 
-    // Get In-Progress Survey Instances (GET /api/survey-instances/in-progress)
     router.get(
         '/instances/in-progress',
         protect,

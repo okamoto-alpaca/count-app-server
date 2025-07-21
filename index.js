@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
-const bcrypt = require('bcrypt'); // ---【修正点】---
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { protect, checkRole } = require('./authMiddleware');
@@ -95,7 +95,9 @@ app.post('/api/login', async (req, res) => {
 
 // --- 認証が必要なAPI ---
 app.use('/api/users', userRoutes(db));
+// ---【変更点】APIのパスを修正 ---
 app.use('/api/surveys', surveyRoutes(db));
+
 
 // Presets
 app.post(
@@ -163,7 +165,7 @@ app.delete(
             res.status(200).json({ message: '削除が完了しました。' });
         } catch (error) {
             console.error('プリセットの削除エラー:', error);
-            res.status(500).json({ message: '削除中にエラーが発生しました。' });
+            res.status(500).json({ message: 'プリセットの削除中にエラーが発生しました。' });
         }
     }
 );
@@ -195,7 +197,7 @@ app.put(
 );
 
 
-// Results & Survey Instances
+// Results
 app.post(
     '/api/results',
     protect,
@@ -332,7 +334,6 @@ app.get(
         }
     }
 );
-
 
 const PORT = 8080;
 app.listen(PORT, () => {
